@@ -1,0 +1,42 @@
+
+// chunk.h — add OP_CONSTANT_LONG to the existing OpCode enum
+// Keep all existing opcodes; insert this next to OP_CONSTANT.
+OP_CONSTANT_LONG,
+
+// chunk.h — add declaration
+void writeConstant(Chunk* chunk, Value value, int line);
+
+
+// chunk.c — add writeConstant()
+void writeConstant(Chunk* chunk, Value value, int line) {
+  int constant = addConstant(chunk, value);
+
+  if (constant < 256) {
+    writeChunk(chunk, OP_CONSTANT, line);
+    writeChunk(chunk, (uint8_t)constant, line);
+  } else {
+    writeChunk(chunk, OP_CONSTANT_LONG, line);
+    // Encode the 24-bit constant index in little-endian byte order.
+    writeChunk(chunk, (uint8_t)(constant & 0xff), line);
+    writeChunk(chunk, (uint8_t)((constant >> 8) & 0xff), line);
+    writeChunk(chunk, (uint8_t)((constant >> 16) & 0xff), line);
+  }
+}
+
+
+// debug.c — add longConstantInstruction()
+static int longConstantInstruction(const char* name, Chunk* chunk,
+                                   int offset) {
+  uint32_t constant = (uint32_t)chunk->code[offset + 1] |
+                      ((uint32_t)chunk->code[offset + 2] << 8) |
+                      ((uint32_t)chunk->code[offset + 3] << 16);
+
+  printf("%-16s %4u '", name, constant);
+  printValue(chunk->constants.values[constant]);
+  printf("'\\n");
+  return offset + 4;
+}
+
+// debug.c — add this case to disassembleInstruction()'s switch
+case OP_CONSTANT_LONG:
+  return longConstantInstruction("OP_CONSTANT_LONG", chunk, offset);
