@@ -1,0 +1,76 @@
+#include <stdint.h>
+#include <string.h>
+#include "value.h"
+#include "object.h"
+
+/*
+ * In table.h, change Entry to store Value keys instead of
+ * ObjString* keys.
+ *
+ * Use an explicit state so nil can be a valid key:
+ *
+ * typedef enum {
+ *   ENTRY_EMPTY,
+ *   ENTRY_TOMBSTONE,
+ *   ENTRY_OCCUPIED
+ * } EntryState;
+ *
+ * typedef struct {
+ *   Value key;
+ *   Value value;
+ *   EntryState state;
+ * } Entry;
+ */
+
+/* Hash a 64-bit value into a 32-bit hash. */
+static uint32_t hashBits(uint64_t bits) {
+  bits ^= bits >> 33;
+  bits *= UINT64_C(0xff51afd7ed558ccd);
+  bits ^= bits >> 33;
+  bits *= UINT64_C(0xc4ceb9fe1a85ec53);
+  bits ^= bits >> 33;
+
+  return (uint32_t)(bits ^ (bits >> 32));
+}
+
+/* Generate hashes for supported key types. */
+static uint32_t hashKey(Value key) {
+  switch (key.type) {
+    case VAL_NIL:
+      return UINT32_C(0x42108421);
+
+    case VAL_BOOL:
+      return AS_BOOL(key)
+          ? UINT32_C(0x34567891)
+          : UINT32_C(0x12345678);
+
+    case VAL_NUMBER: {
+      double number = AS_NUMBER(key);
+
+      /* Positive and negative zero compare equal. */
+      if (number == 0.0) return 0;
+
+      uint64_t bits;
+      memcpy(&bits, &number, sizeof(bits));
+      return hashBits(bits);
+    }
+
+    case VAL_OBJ: {
+      Obj* object = AS_OBJ(key);
+
+      if (object->type == OBJ_STRING) {
+        return ((ObjString*)object)->hash;
+      }
+
+      /* Other object types are not supported here. */
+      return 0;
+    }
+  }
+
+  return 0;
+}
+
+/* Compare keys using Lox equality rules. */
+static bool keysEqual(Value a, Value b) {
+  return valuesEqual(a, b);
+}
