@@ -1,0 +1,29 @@
+// object.h — replace ObjString with a flexible array member.
+struct ObjString {
+  Obj obj;
+  int length;
+  char chars[];
+};
+
+// object.c — replace allocateString(). Keep allocateObject() as-is.
+static ObjString* allocateString(const char* chars, int length) {
+  ObjString* string = (ObjString*)allocateObject(
+      sizeof(ObjString) + (size_t)length + 1, OBJ_STRING);
+  string->length = length;
+  memcpy(string->chars, chars, (size_t)length);
+  string->chars[length] = '\\0';
+  return string;
+}
+
+// object.c — replace takeString(). Copy into the inline array, then
+// free the separately allocated input buffer.
+ObjString* takeString(char* chars, int length) {
+  ObjString* string = allocateString(chars, length);
+  FREE_ARRAY(char, chars, length + 1);
+  return string;
+}
+
+// object.c — replace copyString(); no temporary character allocation needed.
+ObjString* copyString(const char* chars, int length) {
+  return allocateString(chars, length);
+}
