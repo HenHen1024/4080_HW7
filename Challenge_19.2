@@ -1,0 +1,47 @@
+// object.h — add ownsChars to ObjString.
+struct ObjString {
+  Obj obj;
+  int length;
+  char* chars;
+  bool ownsChars;
+};
+
+// object.c — update allocateString() to record ownership.
+static ObjString* allocateString(char* chars, int length, bool ownsChars) {
+  ObjString* string = ALLOCATE_OBJ(ObjString, OBJ_STRING);
+  string->length = length;
+  string->chars = chars;
+  string->ownsChars = ownsChars;
+  return string;
+}
+
+// object.c — takeString() takes ownership of its allocated buffer.
+ObjString* takeString(char* chars, int length) {
+  return allocateString(chars, length, true);
+}
+
+// object.c — copyString() allocates a buffer and transfers ownership.
+ObjString* copyString(const char* chars, int length) {
+  char* heapChars = ALLOCATE(char, length + 1);
+  memcpy(heapChars, chars, (size_t)length);
+  heapChars[length] = '\\0';
+  return takeString(heapChars, length);
+}
+
+// object.c — non-owning string constructor. Use only with long-lived storage.
+ObjString* constantString(const char* chars, int length) {
+  return allocateString((char*)chars, length, false);
+}
+
+// object.h — add declaration with other string functions:
+// ObjString* constantString(const char* chars, int length);
+
+// object.c — replace the OBJ_STRING case in freeObject().
+case OBJ_STRING: {
+  ObjString* string = (ObjString*)object;
+  if (string->ownsChars) {
+    FREE_ARRAY(char, string->chars, string->length + 1);
+  }
+  FREE(ObjString, object);
+  break;
+}
