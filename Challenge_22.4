@@ -1,0 +1,164 @@
+/*
+ * Crafting Interpreters — Chapter 22, Challenge 4
+ *
+ * Extend clox to allow more than 256 local variables in scope.
+ *
+ * Changes are made to:
+ *   compiler.c
+ *   chunk.h
+ *   vm.c
+ *   debug.c
+ *
+ * This file contains the changed C code for reference.
+ */
+
+/* ============================================================
+ * compiler.c
+ * ============================================================
+ *
+ * Change the locals array from 256 entries to 65,536 entries.
+ */
+
+/*
+typedef struct {
+  Local locals[UINT16_MAX];
+  int localCount;
+  int scopeDepth;
+} Compiler;
+*/
+
+
+/*
+ * In addLocal(), change the limit check:
+ */
+
+/*
+if (current->localCount == UINT16_MAX) {
+  error("Too many local variables in function.");
+  return;
+}
+*/
+
+
+/*
+ * Change resolveLocal() to return an int rather than uint8_t.
+ */
+
+/*
+static int resolveLocal(Compiler* compiler, Token* name) {
+  for (int i = compiler->localCount - 1; i >= 0; i--) {
+    Local* local = &compiler->locals[i];
+
+    if (identifiersEqual(name, &local->name)) {
+      if (local->depth == -1) {
+        error("Can't read local variable in its own initializer.");
+      }
+
+      return i;
+    }
+  }
+
+  return -1;
+}
+*/
+
+
+/* ============================================================
+ * chunk.h
+ * ============================================================
+ *
+ * The local-variable instructions need two-byte operands.
+ *
+ * Add:
+ */
+
+/*
+OP_GET_LOCAL_LONG,
+OP_SET_LOCAL_LONG,
+*/
+
+
+/* ============================================================
+ * compiler.c
+ * ============================================================
+ *
+ * Emit the local-variable index using two bytes.
+ *
+ * Instead of:
+ *
+ *   emitBytes(OP_GET_LOCAL, (uint8_t)arg);
+ *
+ * use:
+ */
+
+/*
+emitBytes(OP_GET_LOCAL_LONG,
+          (uint8_t)(arg >> 8),
+          (uint8_t)(arg & 0xff));
+*/
+
+
+/*
+ * And for assignment:
+ */
+
+/*
+emitBytes(OP_SET_LOCAL_LONG,
+          (uint8_t)(arg >> 8),
+          (uint8_t)(arg & 0xff));
+*/
+
+
+/* ============================================================
+ * vm.c
+ * ============================================================
+ *
+ * Read a two-byte local-variable slot.
+ */
+
+/*
+case OP_GET_LOCAL_LONG: {
+  uint16_t slot = READ_SHORT();
+  push(vm.stack[slot]);
+  break;
+}
+
+case OP_SET_LOCAL_LONG: {
+  uint16_t slot = READ_SHORT();
+  vm.stack[slot] = peek(0);
+  break;
+}
+*/
+
+
+/* ============================================================
+ * debug.c
+ * ============================================================
+ *
+ * Add a disassembler for the two-byte local instructions.
+ */
+
+/*
+case OP_GET_LOCAL_LONG:
+  return shortInstruction("OP_GET_LOCAL_LONG", chunk, offset);
+
+case OP_SET_LOCAL_LONG:
+  return shortInstruction("OP_SET_LOCAL_LONG", chunk, offset);
+*/
+
+
+/*
+ * ============================================================
+ * Important:
+ *
+ * The existing compiler/runtime stack also has a separate limit
+ * defined by STACK_MAX. That limit must be increased as well if
+ * you actually want more than 256 locals to be simultaneously
+ * live at runtime.
+ *
+ * For example, in vm.h:
+ *
+ *   #define STACK_MAX 65536
+ *
+ * This allows the VM stack to hold the larger number of locals.
+ */
