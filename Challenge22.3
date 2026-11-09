@@ -1,0 +1,229 @@
+/*
+ * Crafting Interpreters — Chapter 22, Challenge 3
+ *
+ * Add single-assignment variables using the keyword "const".
+ *
+ * Example:
+ *
+ *   const x = 10;
+ *   x = 20;          // Compile error
+ *
+ *   const y = 5;
+ *   print y;         // OK
+ *
+ * Main files modified:
+ *   scanner.h
+ *   scanner.c
+ *   compiler.c
+ *
+ * The examples below show the important changes to clox.
+ */
+
+
+/* ============================================================
+ * scanner.h
+ * ============================================================
+ *
+ * Add TOKEN_CONST to the TokenType enum.
+ *
+ * Example:
+ *
+ *   TOKEN_CLASS,
+ *   TOKEN_ELSE,
+ *   TOKEN_FALSE,
+ *   TOKEN_FOR,
+ *   TOKEN_FUN,
+ *   TOKEN_IF,
+ *   TOKEN_NIL,
+ *   TOKEN_OR,
+ *   TOKEN_PRINT,
+ *   TOKEN_RETURN,
+ *   TOKEN_SUPER,
+ *   TOKEN_THIS,
+ *   TOKEN_TRUE,
+ *   TOKEN_VAR,
+ *   TOKEN_CONST,
+ *   TOKEN_WHILE,
+ */
+
+
+/* ============================================================
+ * scanner.c
+ * ============================================================
+ *
+ * Add "const" to identifierType().
+ */
+
+case 'c':
+  if (scanner.current - scanner.start > 1) {
+    switch (scanner.start[1]) {
+      case 'o':
+        if (scanner.current - scanner.start > 2) {
+          switch (scanner.start[2]) {
+            case 'n':
+              return checkKeyword(3, 2, "st", TOKEN_CONST);
+          }
+        }
+        break;
+    }
+  }
+  break;
+
+
+/* ============================================================
+ * compiler.c
+ * ============================================================
+ *
+ * Add a flag to Local so the compiler remembers whether the
+ * local variable is assignable.
+ */
+
+typedef struct {
+  Token name;
+  int depth;
+  bool isCaptured;
+  bool isConst;
+} Local;
+
+
+/*
+ * When declaring a normal variable with "var", initialize
+ * isConst to false.
+ *
+ * In addLocal():
+ */
+
+Local* local = &current->locals[current->localCount++];
+local->name = *name;
+local->depth = -1;
+local->isCaptured = false;
+local->isConst = false;
+
+
+/*
+ * Add a helper for declaring a const variable.
+ */
+
+static void markLocalConst() {
+  if (current->scopeDepth == 0) return;
+
+  current->locals[current->localCount - 1].isConst = true;
+}
+
+
+/*
+ * Modify varDeclaration() so it recognizes both:
+ *
+ *   var x = value;
+ *   const x = value;
+ *
+ * The declaration can determine whether the variable is const
+ * based on the keyword that started the declaration.
+ */
+
+static void varDeclaration() {
+  bool isConst = false;
+
+  if (match(TOKEN_CONST)) {
+    isConst = true;
+  } else {
+    consume(TOKEN_VAR, "Expect 'var' or 'const'.");
+  }
+
+  uint8_t global = parseVariable("Expect variable name.");
+
+  if (match(TOKEN_EQUAL)) {
+    expression();
+  } else {
+    emitByte(OP_NIL);
+  }
+
+  consume(TOKEN_SEMICOLON, "Expect ';' after variable declaration.");
+
+  if (isConst && current->scopeDepth > 0) {
+    markLocalConst();
+  }
+
+  defineVariable(global);
+}
+
+
+/*
+ * IMPORTANT:
+ *
+ * If your existing compiler has a separate declaration function
+ * for locals, put the isConst assignment immediately after
+ * addLocal() creates the Local.
+ *
+ * For example:
+ */
+
+if (current->scopeDepth > 0) {
+  addLocal(&parser.previous);
+
+  if (isConst) {
+    current->locals[current->localCount - 1].isConst = true;
+  }
+
+  return 0;
+}
+
+
+/* ============================================================
+ * compiler.c — namedVariable()
+ * ============================================================
+ *
+ * Before compiling an assignment to a local variable, check
+ * whether that Local is const.
+ */
+
+static void namedVariable(Token name, bool canAssign) {
+  uint8_t getOp;
+  uint8_t setOp;
+
+  int arg = resolveLocal(current, &name);
+
+  if (arg != -1) {
+    Local* local = &current->locals[arg];
+
+    getOp = OP_GET_LOCAL;
+    setOp = OP_SET_LOCAL;
+
+    if (canAssign && match(TOKEN_EQUAL)) {
+      if (local->isConst) {
+        error("Can't assign to a const variable.");
+      }
+
+      expression();
+      emitBytes(setOp, (uint8_t)arg);
+    } else {
+      emitByte(getOp);
+      emitByte((uint8_t)arg);
+    }
+
+    return;
+  }
+
+  /*
+   * Existing global-variable handling goes here.
+   */
+}
+
+
+/*
+ * The important behavior is:
+ *
+ *   const x = 10;
+ *   x = 20;
+ *
+ * produces:
+ *
+ *   Can't assign to a const variable.
+ *
+ * But:
+ *
+ *   var x = 10;
+ *   x = 20;
+ *
+ * remains valid.
+ */
