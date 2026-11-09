@@ -1,0 +1,202 @@
+/*
+ * Crafting Interpreters — Chapter 23, Challenge 1
+ *
+ * Add switch/case/default statements to clox.
+ *
+ * Files that need changes:
+ *   scanner.h
+ *   scanner.c
+ *   compiler.c
+ *
+ * Syntax:
+ *
+ *   switch (expression) {
+ *     case expression:
+ *       statements
+ *     default:
+ *       statements
+ *   }
+ *
+ * There is no fallthrough or break.
+ * Every matching case jumps to the end of the switch.
+ */
+
+
+/* ============================================================
+ * scanner.h
+ * ============================================================ */
+
+/*
+ * Add these tokens to TokenType:
+ *
+ * TOKEN_CASE,
+ * TOKEN_DEFAULT,
+ * TOKEN_SWITCH,
+ */
+
+
+/* ============================================================
+ * scanner.c
+ * ============================================================ */
+
+/*
+ * Add the keywords to identifierType().
+ *
+ * "case"
+ */
+case 'c':
+  if (checkKeyword(1, 3, "ase", TOKEN_CASE)) {
+    return TOKEN_CASE;
+  }
+  break;
+
+
+/*
+ * "default"
+ */
+case 'd':
+  if (checkKeyword(1, 6, "efault", TOKEN_DEFAULT)) {
+    return TOKEN_DEFAULT;
+  }
+  break;
+
+
+/*
+ * "switch"
+ */
+case 's':
+  if (checkKeyword(1, 5, "witch", TOKEN_SWITCH)) {
+    return TOKEN_SWITCH;
+  }
+  break;
+
+
+/* ============================================================
+ * compiler.c
+ * ============================================================ */
+
+/*
+ * Add switchStatement() to the statement compiler.
+ */
+
+static void switchStatement() {
+  consume(TOKEN_LEFT_PAREN, "Expect '(' after 'switch'.");
+  expression();
+  consume(TOKEN_RIGHT_PAREN, "Expect ')' after switch value.");
+
+  /*
+   * Keep the switch value on the stack while each case
+   * expression is evaluated.
+   *
+   * Each case:
+   *
+   *   switchValue
+   *   caseValue
+   *   OP_EQUAL
+   *   OP_JUMP_IF_FALSE
+   *
+   * If false, remove the comparison result and continue
+   * with the next case.
+   */
+
+  consume(TOKEN_LEFT_BRACE, "Expect '{' after switch value.");
+
+  int endJumps[UINT8_COUNT];
+  int endJumpCount = 0;
+
+  while (match(TOKEN_CASE)) {
+    expression();
+    consume(TOKEN_COLON, "Expect ':' after case value.");
+
+    emitByte(OP_EQUAL);
+
+    int nextCase = emitJump(OP_JUMP_IF_FALSE);
+    emitByte(OP_POP);
+
+    /*
+     * Execute this case's statements.
+     */
+
+    while (!check(TOKEN_CASE) &&
+           !check(TOKEN_DEFAULT) &&
+           !check(TOKEN_RIGHT_BRACE) &&
+           !check(TOKEN_EOF)) {
+      declaration();
+    }
+
+    /*
+     * Matching case jumps to the end of the switch.
+     */
+
+    if (endJumpCount == UINT8_COUNT) {
+      error("Too many switch cases.");
+    }
+
+    endJumps[endJumpCount++] = emitJump(OP_JUMP);
+
+    /*
+     * If the case didn't match, continue to the next case.
+     */
+
+    patchJump(nextCase);
+    emitByte(OP_POP);
+  }
+
+  if (match(TOKEN_DEFAULT)) {
+    consume(TOKEN_COLON, "Expect ':' after 'default'.");
+
+    while (!check(TOKEN_RIGHT_BRACE) &&
+           !check(TOKEN_EOF)) {
+      declaration();
+    }
+  }
+
+  consume(TOKEN_RIGHT_BRACE,
+          "Expect '}' after switch statement.");
+
+  /*
+   * Remove the original switch value from the stack.
+   */
+
+  emitByte(OP_POP);
+
+  /*
+   * Patch all successful-case jumps to the end.
+   */
+
+  for (int i = 0; i < endJumpCount; i++) {
+    patchJump(endJumps[i]);
+  }
+}
+
+
+/*
+ * Add switch to statement().
+ */
+
+static void statement() {
+
+  if (match(TOKEN_PRINT)) {
+    printStatement();
+
+  } else if (match(TOKEN_FOR)) {
+    forStatement();
+
+  } else if (match(TOKEN_IF)) {
+    ifStatement();
+
+  } else if (match(TOKEN_WHILE)) {
+    whileStatement();
+
+  } else if (match(TOKEN_SWITCH)) {
+    switchStatement();
+
+  } else if (match(TOKEN_LEFT_BRACE)) {
+    beginScope();
+    block();
+    endScope();
+
+  } else {
+    expressionStatement();
+  }
+}
