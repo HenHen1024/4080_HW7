@@ -1,0 +1,104 @@
+/*
+ * Crafting Interpreters — Chapter 24, Challenge 4
+ *
+ * Additional useful native functions.
+ *
+ * Main files:
+ *   vm.c
+ *
+ * Requires:
+ *
+ *   #include <math.h>
+ *   #include <stdlib.h>
+ */
+
+
+/* ============================================================
+ * sqrt()
+ * ============================================================ */
+
+static bool sqrtNative(int argCount,
+                       Value* args,
+                       Value* result) {
+
+  if (!IS_NUMBER(args[0])) {
+    runtimeError("Argument to sqrt() must be a number.");
+    return false;
+  }
+
+  double value = AS_NUMBER(args[0]);
+
+  if (value < 0) {
+    runtimeError("Argument to sqrt() cannot be negative.");
+    return false;
+  }
+
+  *result = NUMBER_VAL(sqrt(value));
+  return true;
+}
+
+
+/* ============================================================
+ * abs()
+ * ============================================================ */
+
+static bool absNative(int argCount,
+                      Value* args,
+                      Value* result) {
+
+  if (!IS_NUMBER(args[0])) {
+    runtimeError("Argument to abs() must be a number.");
+    return false;
+  }
+
+  *result = NUMBER_VAL(fabs(AS_NUMBER(args[0])));
+  return true;
+}
+
+
+/* ============================================================
+ * floor()
+ * ============================================================ */
+
+static bool floorNative(int argCount,
+                        Value* args,
+                        Value* result) {
+
+  if (!IS_NUMBER(args[0])) {
+    runtimeError("Argument to floor() must be a number.");
+    return false;
+  }
+
+  *result = NUMBER_VAL(floor(AS_NUMBER(args[0])));
+  return true;
+}
+
+
+/* ============================================================
+ * random()
+ * ============================================================ */
+
+static bool randomNative(int argCount,
+                         Value* args,
+                         Value* result) {
+
+  double value = (double)rand() / ((double)RAND_MAX + 1.0);
+
+  *result = NUMBER_VAL(value);
+
+  return true;
+}
+
+
+/* ============================================================
+ * Register the native functions.
+ * ============================================================ */
+
+static void defineNatives() {
+  defineNative("clock", clockNative, 0);
+
+  defineNative("sqrt", sqrtNative, 1);
+  defineNative("abs", absNative, 1);
+  defineNative("floor", floorNative, 1);
+  defineNative("random", randomNative, 0);
+}
