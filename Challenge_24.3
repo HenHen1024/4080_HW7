@@ -1,0 +1,93 @@
+/*
+ * Crafting Interpreters — Chapter 24, Challenge 3
+ *
+ * Allow native functions to report runtime errors.
+ *
+ * Main files:
+ *   object.h
+ *   object.c
+ *   vm.c
+ */
+
+/* ============================================================
+ * object.h
+ * ============================================================ */
+
+/*
+ * Change NativeFn so it returns bool.
+ *
+ * The result is written through the Value* result parameter.
+ */
+
+typedef bool (*NativeFn)(int argCount,
+                         Value* args,
+                         Value* result);
+
+
+/* ============================================================
+ * vm.c
+ * ============================================================ */
+
+/*
+ * Example native function.
+ */
+
+static bool clockNative(int argCount,
+                        Value* args,
+                        Value* result) {
+  *result = NUMBER_VAL((double)clock() / CLOCKS_PER_SEC);
+  return true;
+}
+
+
+/*
+ * Example native function that validates its argument.
+ */
+
+static bool sqrtNative(int argCount,
+                       Value* args,
+                       Value* result) {
+
+  if (!IS_NUMBER(args[0])) {
+    runtimeError("Argument to sqrt() must be a number.");
+    return false;
+  }
+
+  double value = AS_NUMBER(args[0]);
+
+  if (value < 0) {
+    runtimeError("Argument to sqrt() cannot be negative.");
+    return false;
+  }
+
+  *result = NUMBER_VAL(sqrt(value));
+  return true;
+}
+
+
+/*
+ * In callValue(), replace the native-function call with:
+ */
+
+case OBJ_NATIVE: {
+  ObjNative* native = AS_NATIVE(callee);
+
+  if (argCount != native->arity) {
+    runtimeError("Expected %d arguments but got %d.",
+                 native->arity, argCount);
+    return false;
+  }
+
+  Value result;
+
+  if (!native->function(argCount,
+                        vm.stackTop - argCount,
+                        &result)) {
+    return false;
+  }
+
+  vm.stackTop -= argCount + 1;
+  push(result);
+
+  return true;
+}
