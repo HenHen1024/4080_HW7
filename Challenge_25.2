@@ -1,0 +1,182 @@
+/*
+ * Chapter 25 - Challenge 25.2
+ *
+ * Make a new variable for each for-loop iteration so
+ * closures capture a different variable each time.
+ *
+ * Main file:
+ *   compiler.c
+ *
+ * Example:
+ *
+ *   for (var i = 1; i <= 2; i = i + 1) {
+ *     fun closure() {
+ *       print i;
+ *     }
+ *   }
+ *
+ * Each closure should capture a different i.
+ */
+
+
+/*
+ * The basic idea is:
+ *
+ *     var i = 1;
+ *
+ *     // iteration 1
+ *     {
+ *       var i = old_i;
+ *       ...
+ *     }
+ *
+ *     old_i = old_i + 1;
+ *
+ *     // iteration 2
+ *     {
+ *       var i = old_i;
+ *       ...
+ *     }
+ *
+ * The body variable gets a new stack slot each iteration.
+ */
+
+
+/*
+ * Add a helper that creates a synthetic local variable.
+ */
+
+static void copyLoopVariable(Token name) {
+  /*
+   * The value of the existing loop variable is already
+   * available through its local slot.
+   */
+
+  int oldLocal = resolveLocal(current, &name);
+
+  if (oldLocal == -1) {
+    return;
+  }
+
+  /*
+   * Put the current value on the stack before declaring
+   * the new variable.
+   */
+
+  emitBytes(OP_GET_LOCAL, (uint8_t)oldLocal);
+
+  /*
+   * Create a new local with the same name.
+   */
+
+  addLocal(name);
+  markInitialized();
+}
+
+
+/*
+ * Modify forStatement().
+ *
+ * The important part is that the body gets a fresh scope.
+ */
+
+static void forStatement() {
+  beginScope();
+
+  consume(TOKEN_LEFT_PAREN, "Expect '(' after 'for'.");
+
+  Token loopVariable;
+  bool hasLoopVariable = false;
+
+  if (!match(TOKEN_SEMICOLON)) {
+    if (match(TOKEN_VAR)) {
+
+      consume(TOKEN_IDENTIFIER,
+              "Expect variable name.");
+
+      loopVariable = parser.previous;
+      hasLoopVariable = true;
+
+      declareVariable();
+
+      uint8_t global = 0;
+
+      if (current->scopeDepth > 0) {
+        global = 0;
+      } else {
+        global = identifierConstant(&loopVariable);
+      }
+
+      if (match(TOKEN_EQUAL)) {
+        expression();
+      } else {
+        emitByte(OP_NIL);
+      }
+
+      consume(TOKEN_SEMICOLON,
+              "Expect ';' after loop initializer.");
+
+      defineVariable(global);
+
+    } else {
+      expressionStatement();
+    }
+  }
+
+  int loopStart = currentChunk()->count;
+  int exitJump = -1;
+
+  if (!match(TOKEN_SEMICOLON)) {
+    expression();
+
+    consume(TOKEN_SEMICOLON,
+            "Expect ';' after loop condition.");
+
+    exitJump = emitJump(OP_JUMP_IF_FALSE);
+
+    emitByte(OP_POP);
+  }
+
+  if (!match(TOKEN_RIGHT_PAREN)) {
+    int bodyJump = emitJump(OP_JUMP);
+
+    int incrementStart = currentChunk()->count;
+
+    expression();
+    emitByte(OP_POP);
+
+    consume(TOKEN_RIGHT_PAREN,
+            "Expect ')' after for clauses.");
+
+    emitLoop(loopStart);
+
+    loopStart = incrementStart;
+
+    patchJump(bodyJump);
+  }
+
+  /*
+   * Create a new scope for this iteration.
+   */
+
+  if (hasLoopVariable) {
+    beginScope();
+
+    copyLoopVariable(loopVariable);
+  }
+
+  statement();
+
+  if (hasLoopVariable) {
+    endScope();
+  }
+
+  emitLoop(loopStart);
+
+  if (exitJump != -1) {
+    patchJump(exitJump);
+    emitByte(OP_POP);
+  }
+
+  endScope();
+}
