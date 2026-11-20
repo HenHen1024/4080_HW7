@@ -1,0 +1,174 @@
+/*
+ * Chapter 25 - Challenge 25.1
+ *
+ * Only wrap functions in ObjClosure when they actually
+ * capture variables.
+ *
+ * This requires changes to:
+ *   compiler.c
+ *   vm.h
+ *   vm.c
+ */
+
+/*
+ * compiler.c
+ *
+ * In function(), after:
+ *
+ *     ObjFunction* function = endCompiler();
+ *
+ * use:
+ */
+
+if (function->upvalueCount > 0) {
+  emitBytes(OP_CLOSURE, makeConstant(OBJ_VAL(function)));
+
+  for (int i = 0; i < function->upvalueCount; i++) {
+    emitByte(compiler.upvalues[i].isLocal ? 1 : 0);
+    emitByte(compiler.upvalues[i].index);
+  }
+} else {
+  emitBytes(OP_CONSTANT, makeConstant(OBJ_VAL(function)));
+}
+
+
+/*
+ * vm.h
+ *
+ * Change CallFrame so it can represent either a normal
+ * function or a closure.
+ */
+
+typedef struct {
+  ObjFunction* function;
+  ObjClosure* closure;
+  uint8_t* ip;
+  Value* slots;
+} CallFrame;
+
+
+/*
+ * vm.c
+ *
+ * Add separate call functions.
+ */
+
+static bool callFunction(ObjFunction* function, int argCount) {
+  if (argCount != function->arity) {
+    runtimeError("Expected %d arguments but got %d.",
+                 function->arity, argCount);
+    return false;
+  }
+
+  if (vm.frameCount == FRAMES_MAX) {
+    runtimeError("Stack overflow.");
+    return false;
+  }
+
+  CallFrame* frame = &vm.frames[vm.frameCount++];
+
+  frame->function = function;
+  frame->closure = NULL;
+  frame->ip = function->chunk.code;
+  frame->slots = vm.stackTop - argCount - 1;
+
+  return true;
+}
+
+
+static bool callClosure(ObjClosure* closure, int argCount) {
+  ObjFunction* function = closure->function;
+
+  if (argCount != function->arity) {
+    runtimeError("Expected %d arguments but got %d.",
+                 function->arity, argCount);
+    return false;
+  }
+
+  if (vm.frameCount == FRAMES_MAX) {
+    runtimeError("Stack overflow.");
+    return false;
+  }
+
+  CallFrame* frame = &vm.frames[vm.frameCount++];
+
+  frame->function = function;
+  frame->closure = closure;
+  frame->ip = function->chunk.code;
+  frame->slots = vm.stackTop - argCount - 1;
+
+  return true;
+}
+
+
+/*
+ * In callValue(), support both OBJ_FUNCTION and OBJ_CLOSURE.
+ */
+
+switch (OBJ_TYPE(callee)) {
+
+  case OBJ_FUNCTION:
+    return callFunction(AS_FUNCTION(callee), argCount);
+
+  case OBJ_CLOSURE:
+    return callClosure(AS_CLOSURE(callee), argCount);
+
+  case OBJ_NATIVE:
+    /* existing native-call code */
+    break;
+
+  default:
+    runtimeError("Can only call functions and classes.");
+    return false;
+}
+
+
+/*
+ * OP_CLOSURE stays responsible for creating closures.
+ */
+
+case OP_CLOSURE: {
+  ObjFunction* function = AS_FUNCTION(READ_CONSTANT());
+  ObjClosure* closure = newClosure(function);
+
+  push(OBJ_VAL(closure));
+
+  for (int i = 0; i < function->upvalueCount; i++) {
+    uint8_t isLocal = READ_BYTE();
+    uint8_t index = READ_BYTE();
+
+    if (isLocal) {
+      closure->upvalues[i] =
+          captureUpvalue(frame->slots + index);
+    } else {
+      closure->upvalues[i] =
+          frame->closure->upvalues[index];
+    }
+  }
+
+  break;
+}
+
+
+/*
+ * For a normal function, the frame has no closure.
+ *
+ * Therefore OP_GET_UPVALUE and OP_SET_UPVALUE should only
+ * execute for functions that actually have upvalues.
+ */
+
+case OP_GET_UPVALUE: {
+  uint8_t slot = READ_BYTE();
+
+  push(*frame->closure->upvalues[slot]->location);
+
+  break;
+}
+
+case OP_SET_UPVALUE: {
+  uint8_t slot = READ_BYTE();
+
+  *frame->closure->upvalues[slot]->location = peek(0);
+
+  break;
+}
