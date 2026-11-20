@@ -1,0 +1,44 @@
+// Chapter 25 - Challenge 25.3
+//
+// Vector "object" using closures
+
+
+fun Vector(x, y) {
+
+  fun getX() {
+    return x;
+  }
+
+  fun getY() {
+    return y;
+  }
+
+  fun add(other) {
+    return Vector(
+      x + other.getX(),
+      y + other.getY()
+    );
+  }
+
+  fun vectorX() {
+    return getX();
+  }
+
+  fun vectorY() {
+    return getY();
+  }
+
+  return add;
+}
+
+
+var v1 = Vector(2, 3);
+var v2 = Vector(4, 5);
+
+print v1.getX();
+print v1.getY();
+
+var v3 = v1.add(v2);
+
+print v3.getX();
+print v3.getY();
